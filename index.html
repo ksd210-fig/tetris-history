@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>테트리스의 역사 — Fig.1</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Noto+Sans+KR:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0c0a;
+      --board-bg: #0d0c0a;
+      --fg: #f5f1ea;
+      --muted: rgba(245,241,234,0.5);
+      --cell: clamp(24px, min(8.3vw, 4.25vh), 42px);
+      --board-w: calc(var(--cell) * 10);
+      --board-h: calc(var(--cell) * 20);
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px 30px;
+      font-family: 'Noto Sans KR', sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+      overflow-x: hidden;
+    }
+
+    /* ── BOARD ── */
+    #board-wrap {
+      position: relative;
+      width: var(--board-w);
+      max-width: calc(100vw - 28px);
+    }
+    #board {
+      display: grid;
+      grid-template-columns: repeat(10, var(--cell));
+      grid-template-rows: repeat(20, var(--cell));
+      background: var(--board-bg);
+      outline: none;
+      overflow: hidden;
+      width: var(--board-w);
+      height: var(--board-h);
+    }
+    .cell {
+      width: var(--cell);
+      height: var(--cell);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      font-family: 'Archivo Black', 'Arial Black', Impact, sans-serif;
+      font-size: calc(var(--cell) * 0.9);
+      font-weight: 900;
+      line-height: 1;
+      text-transform: uppercase;
+      color: var(--fg);
+    }
+    /* 한글 버전 블록: Noto Sans KR medium */
+    body.lang-ko .cell {
+      font-family: 'Noto Sans KR', sans-serif;
+      font-weight: 500;
+    }
+
+    /* ── OVERLAY ── */
+    #overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(13,12,10,0.92);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      z-index: 10;
+    }
+    #overlay h2 {
+      font-family: 'Noto Sans KR', sans-serif;
+      font-weight: 700;
+      font-size: clamp(1.4rem, 5vw, 2.2rem);
+      color: var(--fg);
+    }
+    #overlay p {
+      font-size: 0.82rem;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.8;
+      max-width: 240px;
+    }
+    #start-btn, #action-btn {
+      margin-top: 8px;
+      padding: 5px 3px;
+      background: transparent;
+      color: var(--fg);
+      border: none;
+      border-bottom: 1px solid rgba(245,241,234,0.5);
+      border-radius: 0;
+      cursor: pointer;
+      font-family: 'Noto Sans KR', sans-serif;
+      font-weight: 500;
+      font-size: 0.9rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      transition: border-color 0.2s ease;
+    }
+    #start-btn:hover, #action-btn:hover { border-bottom-color: #f5f1ea; }
+
+    #lang-toggle {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 4px;
+    }
+    #lang-toggle button {
+      padding: 5px 14px;
+      background: transparent;
+      color: rgba(245,241,234,0.42);
+      border: 1px solid rgba(245,241,234,0.22);
+      border-radius: 2px;
+      cursor: pointer;
+      font-family: 'Noto Sans KR', sans-serif;
+      font-weight: 700;
+      font-size: 0.72rem;
+    }
+    #lang-toggle button.is-active {
+      background: #f5f1ea;
+      color: #0d0c0a;
+      border-color: #f5f1ea;
+    }
+
+    @media (max-width: 640px) {
+      body { padding: 18px 10px 24px; }
+    }
+  </style>
+</head>
+<body class="lang-ko">
+
+<div id="game">
+  <div id="board-wrap">
+    <div id="board" tabindex="0"></div>
+    <div id="overlay"></div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+//  역사 텍스트
+// ═══════════════════════════════════════════
+const HISTORY_TEXTS = {
+  ko:
+    '테트리스는 1984년 소련의 컴퓨터 과학자 알렉세이 파지트노프가 만든 퍼즐 게임입니다. ' +
+    '파지트노프는 모스크바 국립과학아카데미 컴퓨터 센터에서 연구하던 중 펜토미노 퍼즐에서 영감을 받아 이 게임을 개발했습니다. ' +
+    '게임의 이름은 그리스어로 넷을 뜻하는 테트라와 파지트노프가 즐기던 스포츠 테니스를 합쳐 테트리스라고 지었습니다. ' +
+    '처음에는 소련 내부 연구 네트워크에서만 퍼졌지만 이 게임에 빠진 과학자들이 업무를 잊을 정도로 중독성이 강했습니다. ' +
+    '1986년 헝가리 사업가 로버트 스타인이 서방 세계에 이 게임을 소개하면서 테트리스는 국제 무대에 등장했습니다. ' +
+    '닌텐도와 아타리 세가 등 여러 게임 회사들이 판권을 두고 치열하게 경쟁했습니다. ' +
+    '결국 1989년 닌텐도가 게임보이용 독점 계약을 따냈고 게임보이 출시 번들로 포함된 테트리스는 전 세계적으로 폭발적 인기를 끌었습니다. ' +
+    '이후 수십 년간 다양한 플랫폼에서 발매된 테트리스는 전 세계에서 오억 개 이상 판매된 역대 최다 판매 게임 중 하나가 되었습니다. ' +
+    '2006년 파지트노프는 더 테트리스 컴퍼니를 통해 자신이 만든 게임의 저작권을 마침내 되찾았습니다. ' +
+    '오늘날에도 테트리스는 수백 개의 플랫폼에서 전 세계 수억 명이 즐기는 영원한 고전으로 남아 있습니다.',
+  en:
+    'Tetris was created in 1984 by Alexey Pajitnov, a computer scientist in the Soviet Union. ' +
+    'While researching at the Computing Center of the Soviet Academy of Sciences in Moscow, he was inspired by pentomino puzzles to design the game. ' +
+    'Its name combines tetra, the Greek word for four, with tennis, a sport Pajitnov enjoyed. ' +
+    'At first it spread only through internal Soviet research networks, but it was so addictive that scientists forgot their work. ' +
+    'In 1986 the Hungarian businessman Robert Stein introduced it to the West, bringing Tetris onto the international stage. ' +
+    'Companies such as Nintendo, Atari and Sega competed fiercely over the rights. ' +
+    'In 1989 Nintendo secured an exclusive Game Boy deal, and bundled with the console, Tetris became a worldwide phenomenon. ' +
+    'Over the following decades it was released on countless platforms and became one of the best selling games of all time, with over five hundred million copies sold. ' +
+    'In 2006 Pajitnov finally reclaimed the rights to his game through The Tetris Company. ' +
+    'Even today Tetris remains a timeless classic played by hundreds of millions across hundreds of platforms.',
+};
+
+let lang = 'ko';
+let HISTORY = [...HISTORY_TEXTS[lang]]; // Unicode-safe split
+let H_LEN = HISTORY.length;
+
+function setLang(next) {
+  if (!HISTORY_TEXTS[next]) return;
+  lang = next;
+  HISTORY = [...HISTORY_TEXTS[lang]];
+  H_LEN = HISTORY.length;
+  document.body.classList.toggle('lang-ko', lang === 'ko');
+  document.body.classList.toggle('lang-en', lang === 'en');
+}
+
+// 언어 토글 (시작·재시작 화면 공용)
+function langToggleHTML() {
+  return `<div id="lang-toggle">
+    <button type="button" data-lang="ko"${lang === 'ko' ? ' class="is-active"' : ''}>한국어</button>
+    <button type="button" data-lang="en"${lang === 'en' ? ' class="is-active"' : ''}>English</button>
+  </div>`;
+}
+function wireLangToggle(container) {
+  const btns = container.querySelectorAll('#lang-toggle [data-lang]');
+  btns.forEach(b => b.addEventListener('click', () => {
+    setLang(b.dataset.lang);
+    btns.forEach(x => x.classList.toggle('is-active', x.dataset.lang === lang));
+  }));
+}
+
+// ═══════════════════════════════════════════
+//  블록 정의
+// ═══════════════════════════════════════════
+const PIECES = [
+  { type:'I', shape:[[0,0],[0,1],[0,2],[0,3]] },
+  { type:'O', shape:[[0,0],[0,1],[1,0],[1,1]] },
+  { type:'T', shape:[[0,0],[0,1],[0,2],[1,1]] },
+  { type:'S', shape:[[1,0],[1,1],[0,1],[0,2]] },
+  { type:'Z', shape:[[0,0],[0,1],[1,1],[1,2]] },
+  { type:'J', shape:[[0,0],[1,0],[1,1],[1,2]] },
+  { type:'L', shape:[[0,2],[1,0],[1,1],[1,2]] },
+];
+const BLOCK_COLOR = '#f5f1ea';
+const GHOST_COLOR = 'rgba(245,241,234,0.12)';
+
+const COLS = 10, ROWS = 20;
+
+// ═══════════════════════════════════════════
+//  상태
+// ═══════════════════════════════════════════
+let board, current, nextData, textIndex, level, lines;
+let gameState = 'idle'; // idle | playing | paused | over | complete
+let dropCounter = 0, lastTime = 0, animId = null;
+let softDrop = false;
+let dasDir = null, dasTimer = null;
+let playStartTime = 0;
+
+const boardEl   = document.getElementById('board');
+const overlayEl = document.getElementById('overlay');
+
+// 보드 셀 200개 생성
+const boardCells = [];
+for (let i = 0; i < ROWS * COLS; i++) {
+  const el = document.createElement('div');
+  el.className = 'cell';
+  boardEl.appendChild(el);
+  boardCells.push(el);
+}
+
+// ═══════════════════════════════════════════
+//  유틸
+// ═══════════════════════════════════════════
+function randPiece() {
+  return PIECES[Math.floor(Math.random() * PIECES.length)];
+}
+
+function consumeChars(n) {
+  const chars = [];
+  for (let i = 0; i < n; i++) {
+    while (textIndex < H_LEN && !/[가-힣0-9A-Za-z]/.test(HISTORY[textIndex])) textIndex++;
+    if (textIndex >= H_LEN) break;
+    chars.push(HISTORY[textIndex++]);
+  }
+  return chars;
+}
+
+function rotateCW(shape) {
+  const r = shape.map(([row, col]) => [col, -row]);
+  const minR = Math.min(...r.map(([rr]) => rr));
+  const minC = Math.min(...r.map(([, cc]) => cc));
+  return r.map(([rr, cc]) => [rr - minR, cc - minC]);
+}
+
+function pieceWidth(shape) {
+  const cs = shape.map(([, c]) => c);
+  return Math.max(...cs) - Math.min(...cs) + 1;
+}
+
+function isValid(shape, row, col) {
+  return shape.every(([r, c]) => {
+    const nr = row + r, nc = col + c;
+    return nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && !board[nr][nc];
+  });
+}
+
+// ═══════════════════════════════════════════
+//  게임 로직
+// ═══════════════════════════════════════════
+function makePieceData(p) {
+  const chars = consumeChars(p.shape.length);
+  if (chars.length === 0) return null;
+  return { type: p.type, shape: p.shape.map(s => [...s]), chars };
+}
+
+function spawnPiece() {
+  if (!nextData) nextData = makePieceData(randPiece());
+  if (!nextData) {
+    gameState = 'complete';
+    cancelAnimationFrame(animId);
+    showOverlay('Complete', `Time ${formatTime(performance.now() - playStartTime)}<br>${lang === 'en' ? 'You have read all of Tetris history' : '테트리스의 역사를 모두 읽었습니다'}`);
+    return;
+  }
+  current = { ...nextData, shape: nextData.shape.map(s => [...s]) };
+  current.row = 0;
+  current.col = Math.floor((COLS - pieceWidth(current.shape)) / 2);
+  nextData = makePieceData(randPiece());
+
+  if (!isValid(current.shape, current.row, current.col)) {
+    gameState = 'over';
+    cancelAnimationFrame(animId);
+    showOverlay('Game Over', `Time ${formatTime(performance.now() - playStartTime)}`);
+  }
+}
+
+function lockPiece() {
+  current.shape.forEach(([r, c], i) => {
+    const nr = current.row + r, nc = current.col + c;
+    if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
+      board[nr][nc] = { char: current.chars[i] };
+    }
+  });
+  clearLines();
+  spawnPiece();
+}
+
+function clearLines() {
+  let cleared = 0;
+  for (let r = ROWS - 1; r >= 0; r--) {
+    if (board[r].every(c => c !== null)) {
+      board.splice(r, 1);
+      board.unshift(Array(COLS).fill(null));
+      cleared++;
+      r++;
+    }
+  }
+  if (cleared) {
+    lines += cleared;
+    level = Math.floor(lines / 10) + 1;
+  }
+}
+
+function ghostRow() {
+  let gr = current.row;
+  while (isValid(current.shape, gr + 1, current.col)) gr++;
+  return gr;
+}
+
+function moveDown() {
+  if (isValid(current.shape, current.row + 1, current.col)) {
+    current.row++;
+  } else {
+    lockPiece();
+    dropCounter = 0;
+  }
+}
+function moveLeft()  { if (current && isValid(current.shape, current.row, current.col - 1)) current.col--; }
+function moveRight() { if (current && isValid(current.shape, current.row, current.col + 1)) current.col++; }
+function rotatePiece() {
+  if (!current) return;
+  const rot = rotateCW(current.shape);
+  for (const k of [0, 1, -1, 2, -2]) {
+    if (isValid(rot, current.row, current.col + k)) {
+      current.shape = rot;
+      current.col += k;
+      return;
+    }
+  }
+}
+function hardDrop() {
+  if (!current) return;
+  current.row = ghostRow();
+  lockPiece();
+  dropCounter = 0;
+}
+
+// ═══════════════════════════════════════════
+//  렌더링 (보드만)
+// ═══════════════════════════════════════════
+function render() {
+  if (!current) return;
+
+  const disp = board.map(row => row.map(c => c ? { ...c } : null));
+
+  // 고스트 블록
+  const gr = ghostRow();
+  if (gr !== current.row) {
+    current.shape.forEach(([r, c], i) => {
+      const nr = gr + r, nc = current.col + c;
+      if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && !disp[nr][nc]) {
+        disp[nr][nc] = { char: current.chars[i], ghost: true };
+      }
+    });
+  }
+
+  // 현재 블록
+  current.shape.forEach(([r, c], i) => {
+    const nr = current.row + r, nc = current.col + c;
+    if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
+      disp[nr][nc] = { char: current.chars[i] };
+    }
+  });
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const el = boardCells[r * COLS + c];
+      const cell = disp[r][c];
+      if (cell) {
+        el.textContent = cell.char;
+        el.style.color = cell.ghost ? GHOST_COLOR : BLOCK_COLOR;
+      } else {
+        el.textContent = '';
+        el.style.color = '';
+      }
+    }
+  }
+}
+
+// ═══════════════════════════════════════════
+//  게임 루프
+// ═══════════════════════════════════════════
+function loop(time = 0) {
+  if (gameState !== 'playing') return;
+  const dt = time - lastTime;
+  lastTime = time;
+  dropCounter += dt;
+  const interval = softDrop ? 50 : Math.max(80, 800 - (level - 1) * 68);
+  if (dropCounter >= interval) {
+    moveDown();
+    dropCounter = 0;
+  }
+  render();
+  animId = requestAnimationFrame(loop);
+}
+
+// ═══════════════════════════════════════════
+//  입력 처리
+// ═══════════════════════════════════════════
+const DAS_DELAY = 160, DAS_REPEAT = 48;
+
+function startDAS(dir) {
+  stopDAS();
+  dasDir = dir;
+  dir === 'L' ? moveLeft() : moveRight();
+  dasTimer = setTimeout(() => {
+    dasTimer = setInterval(() => {
+      if (gameState === 'playing') dir === 'L' ? moveLeft() : moveRight();
+    }, DAS_REPEAT);
+  }, DAS_DELAY);
+}
+function stopDAS() {
+  clearTimeout(dasTimer);
+  clearInterval(dasTimer);
+  dasTimer = null;
+  dasDir = null;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.repeat) return;
+
+  // 일시정지 토글
+  if (e.key === 'p' || e.key === 'P') {
+    if (gameState === 'playing') {
+      gameState = 'paused';
+      cancelAnimationFrame(animId);
+      showOverlay('일시정지', 'P를 눌러 계속', false);
+    } else if (gameState === 'paused') {
+      gameState = 'playing';
+      hideOverlay();
+      lastTime = performance.now();
+      animId = requestAnimationFrame(loop);
+    }
+    return;
+  }
+
+  if (gameState !== 'playing' || !current) return;
+  e.preventDefault();
+
+  switch (e.key) {
+    case 'ArrowLeft':  startDAS('L'); break;
+    case 'ArrowRight': startDAS('R'); break;
+    case 'ArrowUp':    rotatePiece(); break;
+    case 'ArrowDown':  softDrop = true; break;
+    case ' ':          hardDrop(); break;
+  }
+});
+
+document.addEventListener('keyup', e => {
+  if (e.key === 'ArrowLeft' && dasDir === 'L') stopDAS();
+  if (e.key === 'ArrowRight' && dasDir === 'R') stopDAS();
+  if (e.key === 'ArrowDown') softDrop = false;
+});
+
+// ═══════════════════════════════════════════
+//  오버레이
+// ═══════════════════════════════════════════
+function showOverlay(title, sub, showBtn = true) {
+  overlayEl.innerHTML = `
+    ${title ? `<h2>${title}</h2>` : ''}
+    ${sub ? `<p>${sub}</p>` : ''}
+    ${showBtn ? langToggleHTML() : ''}
+    ${showBtn ? `<button id="action-btn">Retry</button>` : ''}
+  `;
+  overlayEl.style.display = 'flex';
+  wireLangToggle(overlayEl);
+  const btn = document.getElementById('action-btn');
+  if (btn) btn.addEventListener('click', startGame);
+}
+
+// 시작 화면 (언어 토글 + Start)
+function showStartOverlay() {
+  overlayEl.innerHTML = langToggleHTML() + `<button id="start-btn">Start</button>`;
+  overlayEl.style.display = 'flex';
+  wireLangToggle(overlayEl);
+  document.getElementById('start-btn').addEventListener('click', startGame);
+}
+
+function hideOverlay() {
+  overlayEl.style.display = 'none';
+}
+
+// ═══════════════════════════════════════════
+//  시작
+// ═══════════════════════════════════════════
+function formatTime(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function startGame() {
+  board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+  textIndex = 0; level = 1; lines = 0;
+  playStartTime = performance.now();
+  dropCounter = 0; softDrop = false;
+  nextData = null;
+  stopDAS();
+  cancelAnimationFrame(animId);
+  gameState = 'playing';
+  spawnPiece();
+  hideOverlay();
+  lastTime = performance.now();
+  animId = requestAnimationFrame(loop);
+}
+
+showStartOverlay();
+</script>
+</body>
+</html>
