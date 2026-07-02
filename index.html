@@ -676,10 +676,9 @@ function progressPercent() {
 }
 
 function resultText(message = '') {
-  const progressLabel = lang === 'en' ? 'Progress' : '진행률';
   const lines = [
     `Time ${formatTime(performance.now() - playStartTime)}`,
-    `${progressLabel} ${progressPercent()}%`,
+    `Progress ${progressPercent()}%`,
   ];
   if (message) lines.push(message);
   return lines.join('<br>');
