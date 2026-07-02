@@ -34,6 +34,12 @@
       overflow-x: hidden;
     }
 
+    #game {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
     /* ── BOARD ── */
     #board-wrap {
       position: relative;
@@ -135,8 +141,29 @@
       border-color: #f5f1ea;
     }
 
+    #gesture-hint {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: max-content;
+      max-width: calc(100% - 36px);
+      color: rgba(245,241,234,0.28);
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      line-height: 1.7;
+      text-align: center;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.35s ease;
+      z-index: 6;
+    }
+    #gesture-hint.is-visible { opacity: 1; }
+
     @media (max-width: 640px) {
       body { padding: 18px 10px 24px; }
+      #board-wrap { touch-action: none; }
     }
   </style>
 </head>
@@ -146,6 +173,7 @@
   <div id="board-wrap">
     <div id="board" tabindex="0"></div>
     <div id="overlay"></div>
+    <div id="gesture-hint">tap rotate<br>swipe move / down drop</div>
   </div>
 </div>
 
@@ -163,7 +191,7 @@ const HISTORY_TEXTS = {
     '닌텐도와 아타리 세가 등 여러 게임 회사들이 판권을 두고 치열하게 경쟁했습니다. ' +
     '결국 1989년 닌텐도가 게임보이용 독점 계약을 따냈고 게임보이 출시 번들로 포함된 테트리스는 전 세계적으로 폭발적 인기를 끌었습니다. ' +
     '이후 수십 년간 다양한 플랫폼에서 발매된 테트리스는 전 세계에서 오억 개 이상 판매된 역대 최다 판매 게임 중 하나가 되었습니다. ' +
-    '2006년 파지트노프는 더 테트리스 컴퍼니를 통해 자신이 만든 게임의 저작권을 마침내 되찾았습니다. ' +
+    '1996년 파지트노프는 헹크 로저스와 더 테트리스 컴퍼니를 세우며 테트리스의 권리와 라이선스를 직접 관리하기 시작했습니다. ' +
     '오늘날에도 테트리스는 수백 개의 플랫폼에서 전 세계 수억 명이 즐기는 영원한 고전으로 남아 있습니다.',
   en:
     'Tetris was created in 1984 by Alexey Pajitnov, a computer scientist in the Soviet Union. ' +
@@ -174,7 +202,7 @@ const HISTORY_TEXTS = {
     'Companies such as Nintendo, Atari and Sega competed fiercely over the rights. ' +
     'In 1989 Nintendo secured an exclusive Game Boy deal, and bundled with the console, Tetris became a worldwide phenomenon. ' +
     'Over the following decades it was released on countless platforms and became one of the best selling games of all time, with over five hundred million copies sold. ' +
-    'In 2006 Pajitnov finally reclaimed the rights to his game through The Tetris Company. ' +
+    'In 1996 Pajitnov founded The Tetris Company with Henk Rogers, beginning to manage Tetris rights and licensing directly. ' +
     'Even today Tetris remains a timeless classic played by hundreds of millions across hundreds of platforms.',
 };
 
@@ -233,8 +261,10 @@ let softDrop = false;
 let dasDir = null, dasTimer = null;
 let playStartTime = 0;
 
-const boardEl   = document.getElementById('board');
+const boardWrapEl = document.getElementById('board-wrap');
+const boardEl = document.getElementById('board');
 const overlayEl = document.getElementById('overlay');
+const gestureHintEl = document.getElementById('gesture-hint');
 
 // 보드 셀 200개 생성
 const boardCells = [];
@@ -287,7 +317,10 @@ function isValid(shape, row, col) {
 function makePieceData(p) {
   const chars = consumeChars(p.shape.length);
   if (chars.length === 0) return null;
-  return { type: p.type, shape: p.shape.map(s => [...s]), chars };
+  const shape = p.shape.slice(0, chars.length).map(s => [...s]);
+  const minR = Math.min(...shape.map(([r]) => r));
+  const minC = Math.min(...shape.map(([, c]) => c));
+  return { type: p.type, shape: shape.map(([r, c]) => [r - minR, c - minC]), chars };
 }
 
 function spawnPiece() {
@@ -460,7 +493,7 @@ document.addEventListener('keydown', e => {
     if (gameState === 'playing') {
       gameState = 'paused';
       cancelAnimationFrame(animId);
-      showOverlay('일시정지', 'P를 눌러 계속', false);
+      showOverlay(lang === 'en' ? 'Pause' : '일시정지', lang === 'en' ? 'Press P to continue' : 'P를 눌러 계속', false);
     } else if (gameState === 'paused') {
       gameState = 'playing';
       hideOverlay();
@@ -488,10 +521,108 @@ document.addEventListener('keyup', e => {
   if (e.key === 'ArrowDown') softDrop = false;
 });
 
+let gestureStart = null;
+let longPressTimer = null;
+let longPressActive = false;
+let tapTimer = null;
+let lastTapTime = 0;
+let hintTimer = null;
+
+function isGameGestureTarget(e) {
+  return gameState === 'playing' && current && !e.target.closest('button');
+}
+
+function clearLongPress() {
+  clearTimeout(longPressTimer);
+  longPressTimer = null;
+  if (longPressActive) {
+    softDrop = false;
+    longPressActive = false;
+  }
+}
+
+function handleTap() {
+  const now = performance.now();
+  if (now - lastTapTime < 260) {
+    clearTimeout(tapTimer);
+    tapTimer = null;
+    lastTapTime = 0;
+    hardDrop();
+    return;
+  }
+  lastTapTime = now;
+  tapTimer = setTimeout(() => {
+    rotatePiece();
+    tapTimer = null;
+  }, 180);
+}
+
+function showGestureHint() {
+  if (!matchMedia('(max-width: 640px), (pointer: coarse)').matches) return;
+  clearTimeout(hintTimer);
+  gestureHintEl.classList.add('is-visible');
+  hintTimer = setTimeout(() => {
+    gestureHintEl.classList.remove('is-visible');
+  }, 2800);
+}
+
+boardWrapEl.addEventListener('pointerdown', e => {
+  if (!isGameGestureTarget(e)) return;
+  e.preventDefault();
+  boardWrapEl.setPointerCapture(e.pointerId);
+  gestureStart = { x: e.clientX, y: e.clientY, time: performance.now() };
+  longPressActive = false;
+  clearTimeout(longPressTimer);
+  longPressTimer = setTimeout(() => {
+    if (gameState === 'playing' && current) {
+      softDrop = true;
+      longPressActive = true;
+    }
+  }, 320);
+});
+
+boardWrapEl.addEventListener('pointerup', e => {
+  if (!gestureStart) return;
+  e.preventDefault();
+  const dx = e.clientX - gestureStart.x;
+  const dy = e.clientY - gestureStart.y;
+  const absX = Math.abs(dx);
+  const absY = Math.abs(dy);
+  const wasLongPress = longPressActive;
+  clearLongPress();
+  gestureStart = null;
+
+  if (gameState !== 'playing' || !current) return;
+  if (Math.max(absX, absY) < 18) {
+    if (!wasLongPress) handleTap();
+    return;
+  }
+  if (absX > absY) {
+    const steps = Math.max(1, Math.min(4, Math.round(absX / 42)));
+    for (let i = 0; i < steps; i++) dx < 0 ? moveLeft() : moveRight();
+  } else if (dy > 0) {
+    hardDrop();
+  } else {
+    rotatePiece();
+  }
+});
+
+boardWrapEl.addEventListener('pointercancel', () => {
+  clearLongPress();
+  gestureStart = null;
+});
+
+boardWrapEl.addEventListener('lostpointercapture', () => {
+  clearLongPress();
+  gestureStart = null;
+});
+
 // ═══════════════════════════════════════════
 //  오버레이
 // ═══════════════════════════════════════════
 function showOverlay(title, sub, showBtn = true) {
+  gestureHintEl.classList.remove('is-visible');
+  clearTimeout(hintTimer);
   overlayEl.innerHTML = `
     ${title ? `<h2>${title}</h2>` : ''}
     ${sub ? `<p>${sub}</p>` : ''}
@@ -537,6 +668,7 @@ function startGame() {
   gameState = 'playing';
   spawnPiece();
   hideOverlay();
+  showGestureHint();
   lastTime = performance.now();
   animId = requestAnimationFrame(loop);
 }
