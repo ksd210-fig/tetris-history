@@ -209,12 +209,14 @@ const HISTORY_TEXTS = {
 let lang = 'ko';
 let HISTORY = [...HISTORY_TEXTS[lang]]; // Unicode-safe split
 let H_LEN = HISTORY.length;
+let TOTAL_READABLE = readableChars(HISTORY).length;
 
 function setLang(next) {
   if (!HISTORY_TEXTS[next]) return;
   lang = next;
   HISTORY = [...HISTORY_TEXTS[lang]];
   H_LEN = HISTORY.length;
+  TOTAL_READABLE = readableChars(HISTORY).length;
   document.body.classList.toggle('lang-ko', lang === 'ko');
   document.body.classList.toggle('lang-en', lang === 'en');
 }
@@ -254,7 +256,7 @@ const COLS = 10, ROWS = 20;
 // ═══════════════════════════════════════════
 //  상태
 // ═══════════════════════════════════════════
-let board, current, nextData, textIndex, level, lines;
+let board, current, nextData, textIndex, charsRead, level, lines;
 let gameState = 'idle'; // idle | playing | paused | over | complete
 let dropCounter = 0, lastTime = 0, animId = null;
 let softDrop = false;
@@ -282,12 +284,21 @@ function randPiece() {
   return PIECES[Math.floor(Math.random() * PIECES.length)];
 }
 
+function isReadableChar(char) {
+  return /[가-힣0-9A-Za-z]/.test(char);
+}
+
+function readableChars(chars) {
+  return chars.filter(isReadableChar);
+}
+
 function consumeChars(n) {
   const chars = [];
   for (let i = 0; i < n; i++) {
-    while (textIndex < H_LEN && !/[가-힣0-9A-Za-z]/.test(HISTORY[textIndex])) textIndex++;
+    while (textIndex < H_LEN && !isReadableChar(HISTORY[textIndex])) textIndex++;
     if (textIndex >= H_LEN) break;
     chars.push(HISTORY[textIndex++]);
+    charsRead++;
   }
   return chars;
 }
@@ -328,7 +339,7 @@ function spawnPiece() {
   if (!nextData) {
     gameState = 'complete';
     cancelAnimationFrame(animId);
-    showOverlay('Complete', `Time ${formatTime(performance.now() - playStartTime)}<br>${lang === 'en' ? 'You have read all of Tetris history' : '테트리스의 역사를 모두 읽었습니다'}`);
+    showOverlay('Complete', resultText(lang === 'en' ? 'You have read all of Tetris history' : '테트리스의 역사를 모두 읽었습니다'));
     return;
   }
   current = { ...nextData, shape: nextData.shape.map(s => [...s]) };
@@ -339,7 +350,7 @@ function spawnPiece() {
   if (!isValid(current.shape, current.row, current.col)) {
     gameState = 'over';
     cancelAnimationFrame(animId);
-    showOverlay('Game Over', `Time ${formatTime(performance.now() - playStartTime)}`);
+    showOverlay('Game Over', resultText());
   }
 }
 
@@ -657,9 +668,26 @@ function formatTime(ms) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+function progressPercent() {
+  if (!TOTAL_READABLE) return 0;
+  const unreadPreview = gameState === 'over' && nextData ? nextData.chars.length : 0;
+  const readableProgress = Math.max(0, charsRead - unreadPreview);
+  return Math.min(100, Math.round((readableProgress / TOTAL_READABLE) * 100));
+}
+
+function resultText(message = '') {
+  const progressLabel = lang === 'en' ? 'Progress' : '진행률';
+  const lines = [
+    `Time ${formatTime(performance.now() - playStartTime)}`,
+    `${progressLabel} ${progressPercent()}%`,
+  ];
+  if (message) lines.push(message);
+  return lines.join('<br>');
+}
+
 function startGame() {
   board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
-  textIndex = 0; level = 1; lines = 0;
+  textIndex = 0; charsRead = 0; level = 1; lines = 0;
   playStartTime = performance.now();
   dropCounter = 0; softDrop = false;
   nextData = null;
